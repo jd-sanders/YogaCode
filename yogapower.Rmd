@@ -1,0 +1,239 @@
+---
+title: "Yoga Power"
+author: "Jessica Sanders, Mona Iwamoto, Boris Kletser, Amy Lai"
+date: "June 21, 2017"
+output: html_document
+---
+
+## Experimental Design - Yoga in Schools
+
+The proposed experiment will be conducted at an elementary school located in Atlanta, GA whose principal and many teachers are trained in teaching yoga to children. They serve Kindergarten through 5th grade. 
+
+One or two classrooms from each grade will be randomly selected (block selection).  Then all students will be exposed to the various treatments. Classroom sizes are anticipated to be between 20-30 students.   With all the students in the class, on day, the children with be exposed to a recall/attention assignment with yoga, then with the same group of students, the children will be exposed to the same recall/attention assignment without yoga.
+
+## Power Simulation
+
+The following code calculates the expected power of the experiment based on number of grades targeted, classrooms treated, and students per class.  As we have not finalized the details of the outcome metric, the calcuations are done with normalized outcomes. Within a given grade potential outcomes to control are simulated to be distributed normally with a mean of 0 and an standard deviation of 1.  It is assumed that outcome to control is linearly related to grade level.  The variable $te$ indicates the treatment effect in standard deviations.
+
+List of assumptions (these can be modified if necessary):
+
+(1) Every class has the same number of students
+(2) There is a linear effect of grade on outcomes, with a coefficient of one standard deviation
+(3) The between class variation is small (based on noise with a standard devation of 0.2)
+
+### Set up the environment
+```{r}
+library(data.table)
+rm(list = ls())
+```
+
+## Set some experimental parameters
+```{r}
+
+# Number of grades
+nGrades <- 3
+# Number of classrooms per grade 
+nClassrooms <- 4
+# Number of classes per grade to treat
+nClassTreat <- 2
+# Number of students per classroom 
+nStudents <- 20
+
+```
+
+Given the experimental setup and an average treatment effect, this function simulates the experiment and returns either (a) the estimated average treatment effect (ATE), (b) the ATE and associated standard error, or (c) the t-statistic.  We are assuming we have access to the full schedule of potential outcomes (that's why this is a simulation, yo).
+
+The experimental setup is *both* blocked (on grade level) and clustered (class level treatment assignment), so the most challenging part of this simulation is the computation of the standard errors.  Below I use clustered standard errors (Gerber and Green equation 3.22) within a grade level and them accumulate them as blocks (Gerber and Green equation 3.12).
+```{r}
+
+simPowerData <- function(nGrades = 6,
+                         nClassrooms = 4,
+                         nClassTreat = 2,
+                         nStudents = 20,
+                         te = 1, 
+                         calcSE=TRUE, 
+                         returnT = TRUE) {
+ 
+   
+  # Assume there is a linear relationship between grade level and outcome to control.  
+  # Alpha is the coefficient on the grade level 
+  alpha <- 1
+
+  # Total number of kids participating
+  N <- nGrades*nClassrooms*nStudents
+  
+  # Number of classes per grade that get left to control
+  nClassControl <- nClassrooms - nClassTreat
+  
+  # Create an vector with grade values (K=0)
+  allGrades <- c(0:(nGrades-1))
+  
+  # Create columns for grade and classroom IDS
+  gradeIDs <- rep(0:(nGrades-1), each = nClassrooms*nStudents)
+  classroomIDs <- rep(1:(nGrades*nClassrooms), each = nStudents)
+  
+  # Create models of the outcome to control
+  # including the variation between grades and classroom
+  
+  gradeLevelNoise <- alpha*allGrades
+  classLevelNoise <- rnorm(n = nGrades*nClassrooms, mean = 0, sd = 0.2)
+  
+  # The outcome to control for individuals is the individual variation plus class level noise
+  # plus grade level noise
+  y0 <- rnorm(N, mean = 0, sd = 1) + gradeLevelNoise[gradeIDs+1] + classLevelNoise[classroomIDs]
+  
+  # Assume the treatment effect is one standard deviation
+  y1 <- y0 + te
+  
+  # Create the treatment vectors
+  
+  # This statement is kind of ridiculous, but it creates a treatment vector for classrooms 
+  # that is blocked on grades
+  classTreat <- as.vector(replicate(nGrades, sample(c(rep(1, nClassTreat), rep(0, nClassControl)))))
+  
+  # Expand into the treatment vector for individual students
+  studentTreat <- rep(classTreat, each=nStudents)
+  
+  # Create  a data table with all our subjects
+  d = data.table(id = 1:N)
+  d[,gradeIDS := gradeIDs]
+  d[,classroomIDs := classroomIDs]
+  d[,y0 := y0]
+  d[,y1 := y1]
+  d[,treat := studentTreat]
+  d[,y := ifelse(treat==1, y1, y0)]
+  
+  ## ------------------------------------
+  ## calc estimated ATE and outcome means
+  ## ------------------------------------
+  ate = d[ , mean(y[treat==1]) - mean(y[treat==0])]
+  
+  ## -----------------------------
+  ## calculate the standard errors
+  ## -----------------------------
+  
+  if(calcSE) {
+    ## Initialize the standard error
+    se <- 0
+    for (i in 0:(nGrades-1)) {
+      
+      ## -----------------------------------------------------
+      ## Calculate the clustered standard error for that grade 
+      ## -----------------------------------------------------
+      
+      # Get the parameters
+      kGrade <- nClassrooms
+      NGrade <- nClassrooms*nStudents
+      mGrade <- nClassTreat*nStudents
+      
+      ## Collect the means of y0 and y1 in every classroom in this grade
+      uniqueclassrooms <- unique(d[ , classroomIDs[gradeIDs == i]])
+      meanY0 <- c()
+      meanY1 <- c()
+      for (j in uniqueclassrooms) {
+        meanY0 <- append(meanY0, mean(d[, y0[classroomIDs == j]]))
+        meanY1 <- append(meanY1, mean(d[, y1[classroomIDs == j]]))
+      }
+      
+      # Get the variance of the means
+      varY0 <- var(meanY0)
+      varY1 <- var(meanY1)
+      covY0Y1 <- cov(meanY0,meanY1)
+      
+      # Clustered standard errors - Gerber and Green (3.22)
+      seGrade <- sqrt( 1/(kGrade-1)*( mGrade*varY0/(NGrade-mGrade) + (NGrade-mGrade)*varY1/mGrade + 2*covY0Y1) )
+      
+      # Blocked standard errors - Gerber and Green (3.12) (under the sqrt)
+      se <- se + (NGrade*seGrade/N)**2
+    }
+    
+    se <- sqrt(se)
+    t = ate/se
+    ans <- c(ate,se)
+    
+    if(returnT)  {
+      return(t)
+    } else {
+    return(ans)
+    }
+    
+  } else {
+    return(ate)
+  }
+}
+```
+
+We can run the simulation of the experiment a single time to see what there is to see.  What is the ATE and associated standard error we get out?  Let's try a treatment effect of 0.4 standard deviations.
+
+```{r}
+myStats <- simPowerData(nGrades = 6,
+                        nClassrooms = 4,
+                        nClassTreat = 2,
+                        nStudents = 20,
+                        te=0.4,
+                        calcSE=TRUE, 
+                        returnT=FALSE)
+
+cat("Real treatment effect = ", 0.4)
+cat("Estimated treatment effect = ",myStats[1])
+cat("Standard error = ",myStats[2])
+```
+
+
+A second option for calcuating the standard errors is to generate a sampling distribution and get the standard deviation.  We can see if this squares with what we're seeing from the calculation
+```{r}
+# Number of trials to run
+trials = 5000
+
+# Get the sampling distribution
+trialATEs <- replicate(trials, simPowerData(nGrades = 6,
+                                            nClassrooms = 4,
+                                            nClassTreat = 2,
+                                            nStudents = 20,
+                                            te=0.4, 
+                                            calcSE=FALSE, 
+                                            returnT=FALSE))
+
+# Print a histogram
+hist(trialATEs, main="Sampling Distribution of the treatment effect (with real effect 0.4)",
+                xlab="Treatment effect (Standard Deviations)")
+
+# ... and pull out the standard deviation
+mySE <- sd(trialATEs)
+
+cat("Estimated standard error =", mySE)
+```
+
+Turn our attention to power:
+
+```{r}
+## To simulate this, just run it a bunch of times, gather up the t.stats
+## from each run, and compare it to the critical value we're interested in.
+
+# Here is the critical t-statistic we're interested in
+critValue <- function(alpha, N) {
+    critValue = qt(p = 1 - (alpha / 2), df = N)
+    return(critValue)
+}
+
+cat("Critical t-statistic = ", critValue(0.05, nGrades*nClassrooms*nStudents))
+
+## Wrap both these up into a nice little bow...
+simPower <- function(sims, nGrades, nClassrooms,nClassTreat,nStudents,te) {
+    res <-  replicate(n = sims, simPowerData(nGrades=nGrades,
+                                             nClassrooms=nClassrooms,
+                                             nClassTreat=nClassTreat,
+                                             nStudents=nStudents,
+                                             te=te, 
+                                             calcSE=TRUE, 
+                                             returnT=TRUE) )
+    print(prop.table(table(res < critValue(alpha=0.05, N=nGrades*nClassrooms*nStudents))))
+}
+
+simPower(sims=1000, 
+         nGrades=nGrades,
+         nClassrooms=nClassrooms,
+         nClassTreat=nClassTreat,
+         nStudents=nStudents,
+         te = 0.4)
+```
