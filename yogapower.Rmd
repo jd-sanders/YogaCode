@@ -20,6 +20,7 @@ List of assumptions (these can be modified if necessary):
 (1) Every class has the same number of students
 (2) There is a linear effect of grade on outcomes, with a coefficient of one standard deviation
 (3) The between class variation is small (based on noise with a standard devation of 0.2)
+(4) The treatment effect is constant
 
 ### Set up the environment
 ```{r}
