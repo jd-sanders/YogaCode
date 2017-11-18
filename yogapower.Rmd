@@ -9,7 +9,7 @@ output: html_document
 
 The proposed experiment will be conducted at an elementary school located in Atlanta, GA whose principal and many teachers are trained in teaching yoga to children. They serve Kindergarten through 5th grade. 
 
-One or two classrooms from each grade will be randomly selected (block selection).  Then all students will be exposed to the various treatments. Classroom sizes are anticipated to be between 20-30 students.   With all the students in the class, on day, the children with be exposed to a recall/attention assignment with yoga, then with the same group of students, the children will be exposed to the same recall/attention assignment without yoga.
+One or two classrooms from each grade will be randomly selected (block selection).  Then all students will be exposed to the various treatments. Classroom sizes are anticipated to be between 20-30 students.  Treatment classrooms will be given a child-appropriate session of yoga, followed by a short memory recall task.  Control classes will do standard classroom activities followed by the recall task.
 
 ## Power Simulation
 

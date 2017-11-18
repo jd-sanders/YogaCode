@@ -1,7 +1,5 @@
-This is a spot for code and other documents pertaining to our experiment on yoga and working memory.
+This repo is home to a power calculation for a proposed experiment on yoga and working memory in schools.  The experiment itself was ultimately replaced by an experiment on adults.
 
-Mona Iwamoto
-Jessica Sanders
-Boris Klester
-Amy Lai
+Find the rendered html of the Rmd here:  http://jd-sanders.github.io/YogaCode
+
 
